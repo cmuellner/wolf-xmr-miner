@@ -6,11 +6,6 @@
 #include <stdbool.h>
 #include <jansson.h>
 #include <stdatomic.h>
-#ifdef _x86_64
-#include <cpuid.h>
-#endif
-
-#ifdef __linux__
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -20,24 +15,29 @@
 #include <netdb.h>
 #include <sched.h>
 
-#else
-
-#include <winsock2.h>
-
-#endif
-
 #include "cryptonight.h"
 #include "minerutils.h"
 #include "minerlog.h"
 #include "minernet.h"
-#include "stratum.h"
-#include "miner.h"
 #include "ocl.h"
+
+#define ERR_SUCCESS				0
+#define ERR_STUPID_PARAMS		-1
+#define ERR_OCL_API				-2
+#define ERR_NO_SUCH_ALGO		-3
 
 #define STRATUM_TIMEOUT_SECONDS			120
 
 // I know, it's lazy.
 #define STRATUM_MAX_MESSAGE_LEN_BYTES	4096
+
+typedef struct _JobInfo
+{
+	uint32_t XMRTarget;
+	uint8_t ID[32];
+	uint8_t XMRBlob[76];
+	char *blockblob;
+} JobInfo;
 
 typedef struct _StatusInfo
 {
@@ -260,536 +260,6 @@ void *PoolBroadcastThreadProc(void *Info)
 	// free(c_ctx);
 	return(NULL);
 }
-
-#if 0
-int32_t XMRSetKernelArgs(AlgoContext *HashData, void *HashInput, uint32_t Target)
-{
-	cl_int retval;
-	cl_uint zero = 0;
-	size_t GlobalThreads = HashData->GlobalSize, LocalThreads = HashData->WorkSize;
-	
-	if(!HashData || !HashInput) return(ERR_STUPID_PARAMS);
-	
-	retval = clEnqueueWriteBuffer(*HashData->CommandQueues, HashData->InputBuffer, CL_TRUE, 0, 76, HashInput, 0, NULL, NULL);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clEnqueueWriteBuffer to fill input buffer.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	retval = clSetKernelArg(HashData->Kernels[0], 0, sizeof(cl_mem), &HashData->InputBuffer);
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, 0, 0);
-		return(ERR_OCL_API);
-	}
-	
-	// Scratchpads
-	retval = clSetKernelArg(HashData->Kernels[0], 1, sizeof(cl_mem), HashData->ExtraBuffers + 0);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, 0, 1);
-		return(ERR_OCL_API);
-	}
-	
-	// States
-	retval = clSetKernelArg(HashData->Kernels[0], 2, sizeof(cl_mem), HashData->ExtraBuffers + 1);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, 0, 2);
-		return(ERR_OCL_API);
-	}
-	
-	// CN2 Kernel
-	
-	// Scratchpads
-	retval = clSetKernelArg(HashData->Kernels[1], 0, sizeof(cl_mem), HashData->ExtraBuffers + 0);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, 1, 0);
-		return(ERR_OCL_API);
-	}
-	
-	// States
-	retval = clSetKernelArg(HashData->Kernels[1], 1, sizeof(cl_mem), HashData->ExtraBuffers + 1);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, 1, 1);
-		return(ERR_OCL_API);
-	}
-	
-	// CN3 Kernel
-	// Scratchpads
-	retval = clSetKernelArg(HashData->Kernels[2], 0, sizeof(cl_mem), HashData->ExtraBuffers + 0);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, 2, 0);
-		return(ERR_OCL_API);
-	}
-	
-	// States
-	retval = clSetKernelArg(HashData->Kernels[2], 1, sizeof(cl_mem), HashData->ExtraBuffers + 1);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, 2, 1);
-		return(ERR_OCL_API);
-	}
-	
-	// Branch 0
-	retval = clSetKernelArg(HashData->Kernels[2], 2, sizeof(cl_mem), HashData->ExtraBuffers + 2);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, 2, 2);
-		return(ERR_OCL_API);
-	}
-	
-	// Branch 1
-	retval = clSetKernelArg(HashData->Kernels[2], 3, sizeof(cl_mem), HashData->ExtraBuffers + 3);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, 2, 3);
-		return(ERR_OCL_API);
-	}
-	
-	// Branch 2
-	retval = clSetKernelArg(HashData->Kernels[2], 4, sizeof(cl_mem), HashData->ExtraBuffers + 4);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, 2, 4);
-		return(ERR_OCL_API);
-	}
-	
-	// Branch 3
-	retval = clSetKernelArg(HashData->Kernels[2], 5, sizeof(cl_mem), HashData->ExtraBuffers + 5);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, 2, 5);
-		return(ERR_OCL_API);
-	}
-	
-	for(int i = 0; i < 4; ++i)
-	{
-		// States
-		retval = clSetKernelArg(HashData->Kernels[i + 3], 0, sizeof(cl_mem), HashData->ExtraBuffers + 1);
-		
-		if(retval != CL_SUCCESS)
-		{
-			Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, i + 3, 0);
-			return(ERR_OCL_API);
-		}
-		
-		// Nonce buffer
-		retval = clSetKernelArg(HashData->Kernels[i + 3], 1, sizeof(cl_mem), HashData->ExtraBuffers + (i + 2));
-		
-		if(retval != CL_SUCCESS)
-		{
-			Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, i + 3, 1);
-			return(ERR_OCL_API);
-		}
-		
-		// Output
-		retval = clSetKernelArg(HashData->Kernels[i + 3], 2, sizeof(cl_mem), &HashData->OutputBuffer);
-		
-		if(retval != CL_SUCCESS)
-		{
-			Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, i + 3, 2);
-			return(ERR_OCL_API);
-		}
-		
-		// Target
-		retval = clSetKernelArg(HashData->Kernels[i + 3], 3, sizeof(cl_uint), &Target);
-		
-		if(retval != CL_SUCCESS)
-		{
-			Log(LOG_CRITICAL, "Error %d when calling clSetKernelArg for kernel %d, argument %d.", retval, i + 3, 3);
-			return(ERR_OCL_API);
-		}
-	}
-	
-	return(ERR_SUCCESS);
-}
-
-int32_t RunXMRTest(AlgoContext *HashData, void *HashOutput)
-{
-	cl_int retval;
-	cl_uint zero = 0;
-	size_t GlobalThreads = HashData->GlobalSize, LocalThreads = HashData->WorkSize;
-	size_t BranchNonces[4] = {0};
-	
-	if(!HashData || !HashOutput) return(ERR_STUPID_PARAMS);
-	
-	for(int i = 2; i < 6; ++i)
-	{
-		retval = clEnqueueWriteBuffer(*HashData->CommandQueues, HashData->ExtraBuffers[i], CL_FALSE, sizeof(cl_uint) * GlobalThreads, sizeof(cl_uint), &zero, 0, NULL, NULL);
-		
-		if(retval != CL_SUCCESS)
-		{
-			Log(LOG_CRITICAL, "Error %d when calling clEnqueueWriteBuffer to zero branch buffer counter %d.", retval, i - 2);
-			return(ERR_OCL_API);
-		}
-	}
-	
-	retval = clEnqueueWriteBuffer(*HashData->CommandQueues, HashData->OutputBuffer, CL_FALSE, sizeof(cl_uint) * 0xFF, sizeof(cl_uint), &zero, 0, NULL, NULL);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clEnqueueReadBuffer to fetch results.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	clFinish(*HashData->CommandQueues);
-	
-	size_t Nonce[2] = {HashData->Nonce, 1}, gthreads[2] = { GlobalThreads, 8 }, lthreads[2] = { LocalThreads, 8 };
-	
-	{
-		retval = clEnqueueNDRangeKernel(*HashData->CommandQueues, HashData->Kernels[0], 2, Nonce, gthreads, lthreads, 0, NULL, NULL);
-		
-		if(retval != CL_SUCCESS)
-		{
-			Log(LOG_CRITICAL, "Error %d when calling clEnqueueNDRangeKernel for kernel %d.", retval, 0);
-			return(ERR_OCL_API);
-		}
-	}
-	
-	/*for(int i = 1; i < 3; ++i)
-	{
-		retval = clEnqueueNDRangeKernel(*HashData->CommandQueues, HashData->Kernels[i], 1, &HashData->Nonce, &GlobalThreads, &LocalThreads, 0, NULL, NULL);
-	
-		if(retval != CL_SUCCESS)
-		{
-			Log(LOG_CRITICAL, "Error %d when calling clEnqueueNDRangeKernel for kernel %d.", retval, i);
-			return(ERR_OCL_API);
-		}
-	}*/
-	
-	retval = clEnqueueNDRangeKernel(*HashData->CommandQueues, HashData->Kernels[1], 1, &HashData->Nonce, &GlobalThreads, &LocalThreads, 0, NULL, NULL);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clEnqueueNDRangeKernel for kernel %d.", retval, 1);
-		return(ERR_OCL_API);
-	}
-	
-	retval = clEnqueueNDRangeKernel(*HashData->CommandQueues, HashData->Kernels[2], 2, Nonce, gthreads, lthreads, 0, NULL, NULL);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clEnqueueNDRangeKernel for kernel %d.", retval, 2);
-		return(ERR_OCL_API);
-	}
-	
-	retval = clEnqueueReadBuffer(*HashData->CommandQueues, HashData->ExtraBuffers[2], CL_FALSE, sizeof(cl_uint) * GlobalThreads, sizeof(cl_uint), BranchNonces, 0, NULL, NULL);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clEnqueueReadBuffer to fetch results.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	retval = clEnqueueReadBuffer(*HashData->CommandQueues, HashData->ExtraBuffers[3], CL_FALSE, sizeof(cl_uint) * GlobalThreads, sizeof(cl_uint), BranchNonces + 1, 0, NULL, NULL);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clEnqueueReadBuffer to fetch results.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	retval = clEnqueueReadBuffer(*HashData->CommandQueues, HashData->ExtraBuffers[4], CL_FALSE, sizeof(cl_uint) * GlobalThreads, sizeof(cl_uint), BranchNonces + 2, 0, NULL, NULL);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clEnqueueReadBuffer to fetch results.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	retval = clEnqueueReadBuffer(*HashData->CommandQueues, HashData->ExtraBuffers[5], CL_FALSE, sizeof(cl_uint) * GlobalThreads, sizeof(cl_uint), BranchNonces + 3, 0, NULL, NULL);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clEnqueueReadBuffer to fetch results.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	clFinish(*HashData->CommandQueues);
-	
-	for(int i = 0; i < 4; ++i)
-	{
-		if(BranchNonces[i])
-		{
-			//retval = clEnqueueNDRangeKernel(*HashData->CommandQueues, HashData->Kernels[i + 1], 1, &HashData->Nonce, BranchNonces + i, &LocalThreads, 0, NULL, NULL);
-			retval = clEnqueueNDRangeKernel(*HashData->CommandQueues, HashData->Kernels[i + 3], 1, &HashData->Nonce, BranchNonces + i, &LocalThreads, 0, NULL, NULL);
-			
-			if(retval != CL_SUCCESS)
-			{
-				//Log(LOG_CRITICAL, "Error %d when calling clEnqueueNDRangeKernel for kernel %d.", retval, i + 1);
-				Log(LOG_CRITICAL, "Error %d when calling clEnqueueNDRangeKernel for kernel %d.", retval, i + 3);
-				return(ERR_OCL_API);
-			}
-		}
-	}
-	
-	retval = clEnqueueReadBuffer(*HashData->CommandQueues, HashData->OutputBuffer, CL_TRUE, 0, sizeof(cl_uint) * 0x100, HashOutput, 0, NULL, NULL);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clEnqueueReadBuffer to fetch results.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	clFinish(*HashData->CommandQueues);
-	
-	HashData->Nonce += GlobalThreads;
-	
-	return(ERR_SUCCESS);
-}
-
-int32_t XMRCleanup(AlgoContext *HashData)
-{
-	//for(int i = 0; i < 5; ++i) clReleaseKernel(HashData->Kernels[i]);
-	for(int i = 0; i < 7; ++i) clReleaseKernel(HashData->Kernels[i]);
-	
-	clReleaseProgram(HashData->Program);
-	
-	clReleaseMemObject(HashData->InputBuffer);
-	
-	for(int i = 0; i < 6; ++i) clReleaseMemObject(HashData->ExtraBuffers[i]);
-	
-	clReleaseMemObject(HashData->OutputBuffer);
-	
-	free(HashData->ExtraBuffers);
-	
-	clReleaseCommandQueue(*HashData->CommandQueues);
-	
-	free(HashData->CommandQueues);
-	
-	free(HashData->GPUIdxs);
-}
-
-int32_t SetupXMRTest(AlgoContext *HashData, OCLPlatform *OCL, uint32_t DeviceIdx)
-{
-	size_t len;
-	cl_int retval;
-	char *KernelSource, *BuildLog, *Options;
-	size_t GlobalThreads = OCL->Devices[DeviceIdx].rawIntensity, LocalThreads = OCL->Devices[DeviceIdx].WorkSize;
-#ifdef CL_VERSION_2_0
-	const cl_queue_properties CommandQueueProperties[] = { 0, 0, 0 };
-#else
-	const cl_command_queue_properties CommandQueueProperties = { 0 };
-#endif
-	
-	// Sanity checks
-	if(!HashData || !OCL) return(ERR_STUPID_PARAMS);
-	
-	HashData->GlobalSize = GlobalThreads;
-	HashData->WorkSize = LocalThreads;
-	
-	HashData->CommandQueues = (cl_command_queue *)malloc(sizeof(cl_command_queue));
-	
-#ifdef CL_VERSION_2_0
-	*HashData->CommandQueues = clCreateCommandQueueWithProperties(OCL->Context, OCL->Devices[DeviceIdx].DeviceID, CommandQueueProperties, &retval);
-#else
-	*HashData->CommandQueues = clCreateCommandQueue(OCL->Context, OCL->Devices[DeviceIdx].DeviceID, CommandQueueProperties, &retval);
-#endif
-
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clCreateCommandQueueWithProperties.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	// One extra buffer for the scratchpads is required, one for the states, and one for
-	// each of the four possible branches at the end.
-	HashData->ExtraBuffers = (cl_mem *)malloc(sizeof(cl_mem) * 6);
-	
-	HashData->InputBuffer = clCreateBuffer(OCL->Context, CL_MEM_READ_ONLY, 80, NULL, &retval);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clCreateBuffer to create input buffer.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	// Scratchpads
-	HashData->ExtraBuffers[0] = clCreateBuffer(OCL->Context, CL_MEM_READ_WRITE, (1 << 21) * GlobalThreads, NULL, &retval);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clCreateBuffer to create hash scratchpads buffer.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	// States
-	HashData->ExtraBuffers[1] = clCreateBuffer(OCL->Context, CL_MEM_READ_WRITE, 200 * GlobalThreads, NULL, &retval);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clCreateBuffer to create hash states buffer.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	// Blake-256 branches
-	HashData->ExtraBuffers[2] = clCreateBuffer(OCL->Context, CL_MEM_READ_WRITE, sizeof(cl_uint) * (GlobalThreads + 2), NULL, &retval);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clCreateBuffer to create Branch 0 buffer.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	// Groestl-256 branches
-	HashData->ExtraBuffers[3] = clCreateBuffer(OCL->Context, CL_MEM_READ_WRITE, sizeof(cl_uint) * (GlobalThreads + 2), NULL, &retval);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clCreateBuffer to create Branch 1 buffer.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	// JH-256 branches
-	HashData->ExtraBuffers[4] = clCreateBuffer(OCL->Context, CL_MEM_READ_WRITE, sizeof(cl_uint) * (GlobalThreads + 2), NULL, &retval);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clCreateBuffer to create Branch 2 buffer.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	// Skein-512 branches
-	HashData->ExtraBuffers[5] = clCreateBuffer(OCL->Context, CL_MEM_READ_WRITE, sizeof(cl_uint) * (GlobalThreads + 2), NULL, &retval);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clCreateBuffer to create Branch 3 buffer.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	// Assume we may find up to 0xFF nonces in one run - it's reasonable
-	HashData->OutputBuffer = clCreateBuffer(OCL->Context, CL_MEM_READ_WRITE, sizeof(cl_uint) * 0x100, NULL, &retval);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clCreateBuffer to create output buffer.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	len = LoadTextFile(&KernelSource, "cryptonight.cl");
-	
-	HashData->Program = clCreateProgramWithSource(OCL->Context, 1, (const char **)&KernelSource, NULL, &retval);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clCreateProgramWithSource on the contents of %s.", retval, "cryptonight.cl");
-		return(ERR_OCL_API);
-	}
-	
-	Options = (char *)malloc(sizeof(char) * 32);
-	
-	snprintf(Options, 31, "-I. -DWORKSIZE=%d", LocalThreads);
-	
-	retval = clBuildProgram(HashData->Program, 1, &OCL->Devices[DeviceIdx].DeviceID, Options, NULL, NULL);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clBuildProgram.", retval);
-		
-		retval = clGetProgramBuildInfo(HashData->Program, OCL->Devices[DeviceIdx].DeviceID, CL_PROGRAM_BUILD_LOG, 0, NULL, &len);
-	
-		if(retval != CL_SUCCESS)
-		{
-			Log(LOG_CRITICAL, "Error %d when calling clGetProgramBuildInfo for length of build log output.", retval);
-			return(ERR_OCL_API);
-		}
-		
-		BuildLog = (char *)malloc(sizeof(char) * (len + 2));
-		
-		retval = clGetProgramBuildInfo(HashData->Program, OCL->Devices[DeviceIdx].DeviceID, CL_PROGRAM_BUILD_LOG, len, BuildLog, NULL);
-		
-		if(retval != CL_SUCCESS)
-		{
-			Log(LOG_CRITICAL, "Error %d when calling clGetProgramBuildInfo for build log.", retval);
-			return(ERR_OCL_API);
-		}
-		
-		Log(LOG_CRITICAL, "Build Log:\n%s", BuildLog);
-		
-		free(BuildLog);
-		
-		return(ERR_OCL_API);
-	}
-	
-	cl_build_status status;
-	
-	do
-	{
-		retval = clGetProgramBuildInfo(HashData->Program, OCL->Devices[DeviceIdx].DeviceID, CL_PROGRAM_BUILD_STATUS, sizeof(cl_build_status), &status, NULL);
-		if(retval != CL_SUCCESS)
-		{
-			Log(LOG_CRITICAL, "Error %d when calling clGetProgramBuildInfo for status of build.", retval);
-			return(ERR_OCL_API);
-		}
-		
-		sleep(1);
-	} while(status == CL_BUILD_IN_PROGRESS);
-	
-	retval = clGetProgramBuildInfo(HashData->Program, OCL->Devices[DeviceIdx].DeviceID, CL_PROGRAM_BUILD_LOG, 0, NULL, &len);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clGetProgramBuildInfo for length of build log output.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	BuildLog = (char *)malloc(sizeof(char) * (len + 2));
-	
-	retval = clGetProgramBuildInfo(HashData->Program, OCL->Devices[DeviceIdx].DeviceID, CL_PROGRAM_BUILD_LOG, len, BuildLog, NULL);
-	
-	if(retval != CL_SUCCESS)
-	{
-		Log(LOG_CRITICAL, "Error %d when calling clGetProgramBuildInfo for build log.", retval);
-		return(ERR_OCL_API);
-	}
-	
-	Log(LOG_DEBUG, "Build Log:\n%s", BuildLog);
-	
-	free(BuildLog);
-	free(KernelSource);
-	
-	HashData->Kernels = (cl_kernel *)malloc(sizeof(cl_kernel) * 7);
-	
-	const char *KernelNames[] = { "cn0", "cn1", "cn2", "Blake", "Groestl", "JH", "Skein" };
-	
-	for(int i = 0; i < 7; ++i)
-	{
-		HashData->Kernels[i] = clCreateKernel(HashData->Program, KernelNames[i], &retval);
-		
-		if(retval != CL_SUCCESS)
-		{
-			Log(LOG_CRITICAL, "Error %d when calling clCreateKernel for kernel %s.", retval, KernelNames[i]);
-			return(ERR_OCL_API);
-		}
-	}
-	
-	HashData->Nonce = 0;
-	
-	// Hardcode one GPU per thread in this version
-	HashData->GPUIdxs = (size_t *)malloc(sizeof(size_t));
-	*HashData->GPUIdxs = DeviceIdx;
-	
-	return(ERR_SUCCESS);
-}
-#endif
 
 static void RestartMiners(PoolInfo *Pool)
 {
@@ -1330,20 +800,9 @@ void *MinerThreadProc(void *Info)
 	memcpy(TmpWork, MyJob->XMRBlob, sizeof(MyJob->XMRBlob));
 	Target = MyJob->XMRTarget;
 	
-#if 0
-	if (MTInfo->PlatformContext) {
-		MTInfo->AlgoCtx.Nonce = StartNonce;
-		err = XMRSetKernelArgs(&MTInfo->AlgoCtx, TmpWork, Target);
-		if(err) return(NULL);
-		sprintf(ThrID, "Thread %d, GPU ID %d, GPU Type: %s",
-			MTInfo->ThreadID, *MTInfo->AlgoCtx.GPUIdxs, MTInfo->PlatformContext->Devices[*MTInfo->AlgoCtx.GPUIdxs].DeviceName);
-	} else
-#endif
-	{
-		ctx = cryptonight_ctx();
-		*nonceptr = StartNonce;
-		sprintf(ThrID, "Thread %d, (CPU)", MTInfo->ThreadID);
-	}
+	ctx = cryptonight_ctx();
+	*nonceptr = StartNonce;
+	sprintf(ThrID, "Thread %d, (CPU)", MTInfo->ThreadID);
 	
 	while(!ExitFlag)
 	{
@@ -1362,16 +821,7 @@ void *MinerThreadProc(void *Info)
 			memcpy(TmpWork, MyJob->XMRBlob, sizeof(MyJob->XMRBlob));
 			Target = MyJob->XMRTarget;
 			
-#if 0
-			if (MTInfo->PlatformContext) {
-				MTInfo->AlgoCtx.Nonce = StartNonce;
-				err = XMRSetKernelArgs(&MTInfo->AlgoCtx, TmpWork, Target);
-				if(err) return(NULL);
-			} else
-#endif
-			{
-				*nonceptr = StartNonce;
-			}
+			*nonceptr = StartNonce;
 		}
 		else
 		{
@@ -1383,65 +833,34 @@ void *MinerThreadProc(void *Info)
 		
 		begin = MinerGetCurTime();
 		
-#if 0
-		if (MTInfo->PlatformContext) {
-			do
-			{
-				cl_uint Results[0x100] = { 0 };
-
-				err = RunXMRTest(&MTInfo->AlgoCtx, Results);
-				if(err) return(NULL);
-				
-				if(atomic_load(RestartMining + MTInfo->ThreadID)) break;
-
-				for(int i = 0; i < Results[0xFF]; ++i)
-				{
-					Log(LOG_DEBUG, "%s: SHARE found (nonce 0x%.8X)!", ThrID, Results[i]);
-
-					pthread_mutex_lock(&QueueMutex);
-					Share *NewShare = GetShare();
-
-					NewShare->Nonce = Results[i];
-					NewShare->Gothash = 0;
-					NewShare->Job = MyJob;
-
-					SubmitShare(&CurrentQueue, NewShare);
-					pthread_cond_signal(&QueueCond);
-					pthread_mutex_unlock(&QueueMutex);
-				}
-			} while(MTInfo->AlgoCtx.Nonce < (PrevNonce + 1024));
-		} else
-#endif
-		{
-			const uint32_t first_nonce = *nonceptr;
-			uint32_t n = first_nonce - 1;
-			uint32_t hash[32/4] __attribute__((aligned(32)));
-			int found = 0;
+		const uint32_t first_nonce = *nonceptr;
+		uint32_t n = first_nonce - 1;
+		uint32_t hash[32/4] __attribute__((aligned(32)));
+		int found = 0;
 again:
-			do {
-				*nonceptr = ++n;
-				cryptonight_hash_ctx(hash, TmpWork, ctx);
-				if (hash[7] < Target) {
-					found = 1;
-				} else if (atomic_load(RestartMining + MTInfo->ThreadID)) {
-					found = 2;
-				}
-			} while (!found && n < MaxNonce);
-			hashes_done = n - first_nonce;
-			if (found == 1) {
-				Log(LOG_DEBUG, "%s: SHARE found (nonce 0x%.8X)!", ThrID, *nonceptr);
-				pthread_mutex_lock(&QueueMutex);
-				Share *NewShare = GetShare();
-				
-				NewShare->Nonce = *nonceptr;
-				NewShare->Gothash = 1;
-				memcpy(NewShare->Blob, hash, 32);
-				NewShare->Job = MyJob;
-				
-				SubmitShare(&CurrentQueue, NewShare);
-				pthread_cond_signal(&QueueCond);
-				pthread_mutex_unlock(&QueueMutex);
+		do {
+			*nonceptr = ++n;
+			cryptonight_hash_ctx(hash, TmpWork, ctx);
+			if (hash[7] < Target) {
+				found = 1;
+			} else if (atomic_load(RestartMining + MTInfo->ThreadID)) {
+				found = 2;
 			}
+		} while (!found && n < MaxNonce);
+		hashes_done = n - first_nonce;
+		if (found == 1) {
+			Log(LOG_DEBUG, "%s: SHARE found (nonce 0x%.8X)!", ThrID, *nonceptr);
+			pthread_mutex_lock(&QueueMutex);
+			Share *NewShare = GetShare();
+			
+			NewShare->Nonce = *nonceptr;
+			NewShare->Gothash = 1;
+			memcpy(NewShare->Blob, hash, 32);
+			NewShare->Job = MyJob;
+			
+			SubmitShare(&CurrentQueue, NewShare);
+			pthread_cond_signal(&QueueCond);
+			pthread_mutex_unlock(&QueueMutex);
 		}
 		
 		end = MinerGetCurTime();
@@ -1457,15 +876,8 @@ again:
 		Log(LOG_INFO, "%s: %.02fH/s", ThrID, hashes_done / (Seconds));
 	}
 	
-#if 0
-	if (MTInfo->PlatformContext)
-		XMRCleanup(&MTInfo->AlgoCtx);
-#endif
-	
 	return(NULL);
 }
-
-#ifdef __linux__
 
 void SigHandler(int signal)
 {
@@ -1473,17 +885,6 @@ void SigHandler(int signal)
 	ExitFlag = true;
 	write(ExitPipe[1], &c, 1);
 }
-
-#else
-
-BOOL SigHandler(DWORD signal)
-{
-	ExitFlag = true;
-
-	return(TRUE);
-}
-
-#endif
 
 // Signed types indicate there is no default value
 // If they are negative, do not set them.
@@ -1770,24 +1171,10 @@ int main(int argc, char **argv)
 	
 	if(ParseConfigurationFile(argv[1], &Settings)) return(0);
 	
-#ifdef __aarch64__
 	cryptonight_hash_ctx = cryptonight_hash_aesni;
-#else
-	if (__get_cpuid_max(0, &tmp1) >= 1) {
-		__get_cpuid(1, &tmp1, &tmp2, &tmp3, &tmp4);
-		if (tmp3 & 0x2000000)
-			use_aesni = 1;
-	}
-	if (use_aesni)
-		cryptonight_hash_ctx = cryptonight_hash_aesni;
-	else
-		cryptonight_hash_ctx = cryptonight_hash_dumb;
-#endif
 
 	MThrInfo = (MinerThreadInfo *)malloc(sizeof(MinerThreadInfo) * Settings.TotalThreads);
 	MinerWorker = (pthread_t *)malloc(sizeof(pthread_t) * Settings.TotalThreads);
-	
-	#ifdef __linux__
 	
 	pipe(ExitPipe);
 	struct sigaction ExitHandler;
@@ -1796,12 +1183,6 @@ int main(int argc, char **argv)
 	
 	sigaction(SIGINT, &ExitHandler, NULL);
 	signal(SIGPIPE, SIG_IGN);
-	
-	#else
-	
-	SetConsoleCtrlHandler((PHANDLER_ROUTINE)SigHandler, TRUE);
-	
-	#endif
 	
 	RestartMining = (atomic_bool *)malloc(sizeof(atomic_bool) * Settings.TotalThreads);
 	
@@ -1864,61 +1245,6 @@ int main(int argc, char **argv)
 		GlobalStatus.ThreadTimes[i] = 0;
 	}
 	
-	// Initialize ADL and apply settings to card
-	
-	/*ADLInit();
-	
-	for(int i = 0; i < Settings.NumGPUs; ++i)
-	{
-		ADLAdapterDynInfo Info;
-		
-		ret = ADLGetStateInfo(Settings.GPUSettings[i].Index, &Info);
-		
-		if(ret)
-			Log(LOG_ERROR, "ADLGetStateInfo() failed for GPU #%d with code %d.", Settings.GPUSettings[i].Index, ret);
-		
-		Log(LOG_INFO, "Adapter #%d - Fan Speed: %dRPM; Core Clock: %dMhz; Mem Clock: %dMhz; Core Voltage: %dmV; PowerTune: %d; Temp: %.03fC", Settings.GPUSettings[i].Index, Info.FanSpeedRPM, Info.CoreClock, Info.MemClock, Info.CoreVolts, Info.PowerTune, Info.Temp);
-		
-		if(Settings.GPUSettings[i].FanSpeedPercent >= 0)
-		{
-			ret = ADLSetFanspeed(Settings.GPUSettings[i].Index, Settings.GPUSettings[i].FanSpeedPercent);
-			
-			if(ret)
-				Log(LOG_ERROR, "ADLSetFanspeed() failed for GPU #%d with code %d.", Settings.GPUSettings[i].Index, ret);
-			else
-				Log(LOG_INFO, "Setting fan speed for GPU #%d to %d%% succeeded.", Settings.GPUSettings[i].Index, Settings.GPUSettings[i].FanSpeedPercent);
-		}
-		
-		// If either of these are positive, a call to ADLSetClocks is needed
-		if((Settings.GPUSettings[i].CoreFreq >= 0) || (Settings.GPUSettings[i].MemFreq >= 0))
-		{
-			// If corefreq wasn't set, set memfreq. If memfreq wasn't, vice versa.
-			// If both were set, then set both.
-			if(Settings.GPUSettings[i].CoreFreq < 0)
-				ret = ADLSetClocks(Settings.GPUSettings[i].Index, 0, Settings.GPUSettings[i].MemFreq);
-			else if(Settings.GPUSettings[i].MemFreq < 0)
-				ret = ADLSetClocks(Settings.GPUSettings[i].Index, Settings.GPUSettings[i].CoreFreq, 0);
-			else
-				ret = ADLSetClocks(Settings.GPUSettings[i].Index, Settings.GPUSettings[i].CoreFreq, Settings.GPUSettings[i].MemFreq);
-			
-			if(ret)
-				Log(LOG_ERROR, "ADLSetClocks() failed for GPU #%d with code %d.", Settings.GPUSettings[i].Index, ret);
-			else
-				Log(LOG_INFO, "Setting clocks on GPU #%d to %d/%d succeeded.", Settings.GPUSettings[i].Index, Settings.GPUSettings[i].CoreFreq, Settings.GPUSettings[i].MemFreq);
-		}
-		
-		if(Settings.GPUSettings[i].PowerTune)
-		{
-			ret = ADLSetPowertune(Settings.GPUSettings[i].Index, Settings.GPUSettings[i].PowerTune);
-			
-			if(ret < 0) Log(LOG_ERROR, "ADLSetPowertune failed for GPU #%d with code %d.", Settings.GPUSettings[i].Index, ret);
-			else Log(LOG_INFO, "Setting powertune on GPU #%d to %d succeeded.", Settings.GPUSettings[i].Index, Settings.GPUSettings[i].PowerTune);
-		}
-	}
-	
-	Log(LOG_INFO, "Sleeping for 10s to allow fan to spin up/down...");
-	sleep(10);*/
-	
 	for(int i = 0; i < Settings.TotalThreads; ++i) atomic_init(RestartMining + i, false);
 	
 	Log(LOG_NOTIFY, "Setting up GPU(s).");
@@ -1933,13 +1259,6 @@ int main(int argc, char **argv)
 			numGPUs--;
 	}
 	
-#if 0
-	if (numGPUs) {
-		ret = InitOpenCLPlatformContext(&PlatformContext, PlatformIdx, numGPUs, GPUIdxList);
-		if(ret) return(0);
-	}
-#endif
-
 	free(GPUIdxList);
 	
 	for(int i = 0; i < numGPUs; ++i) PlatformContext.Devices[i].rawIntensity = Settings.GPUSettings[i].rawIntensity;
@@ -1962,15 +1281,7 @@ int main(int argc, char **argv)
 	{
 		for(int x = 0; x < Settings.GPUSettings[GPUIdx].Threads; ++x)
 		{
-#if 0
-			if (Settings.GPUSettings[GPUIdx].Index != -1) {
-				SetupXMRTest(&MThrInfo[ThrIdx + x].AlgoCtx, &PlatformContext, GPUIdx);
-				MThrInfo[ThrIdx + x].PlatformContext = &PlatformContext;
-			} else
-#endif
-			{
-				MThrInfo[ThrIdx + x].PlatformContext = NULL;
-			}
+			MThrInfo[ThrIdx + x].PlatformContext = NULL;
 			MThrInfo[ThrIdx + x].ThreadID = ThrIdx + x;
 			MThrInfo[ThrIdx + x].TotalMinerThreads = Settings.TotalThreads;
 		}
@@ -2036,51 +1347,14 @@ int main(int argc, char **argv)
 		}
 	}
 	
-	/*
-	AlgoContext ctx;
-	
-	uint8_t TestInput[80];
-	uint8_t TestOutput[64];
-	
-	for(int i = 0; i < 76; ++i) TestInput[i] = i;
-	
-	//TestInput[75] = 6;
-	
-	SetupXMRTest(&ctx, &PlatformContext, 0);
-	RunXMRTest(&ctx, &PlatformContext, TestInput, TestOutput, 0);
-	
-	printf("Output: ");
-	
-	for(int i = 0; i < 32; ++i) printf("%02X", TestOutput[i]);
-	
-	putchar('\n');
-	*/
-	//json_decref(Settings.AlgoSpecificConfig);
-	
-	//pthread_create(&ADLThread, NULL, ADLInfoGatherThreadProc, NULL);
-	
 	char c;
 	read(ExitPipe[0], &c, 1);
 	
-	//pthread_join(Stratum, NULL);
-	
-	//pthread_cancel(Stratum);
-	//pthread_cancel(ADLThread);
-	
 	for(int i = 0; i < Settings.TotalThreads; ++i) pthread_cancel(MinerWorker[i]);
-	
-#if 0
-	if (numGPUs)
-		ReleaseOpenCLPlatformContext(&PlatformContext);
-#endif
-	
-	//ADLRelease();
 	
 	FreeSettings(&Settings);
 	free(RestartMining);
 	free(Pool.MinerThreads);
-	
-	//pthread_cancel(BroadcastThread);
 	
 	closesocket(poolsocket);
 	

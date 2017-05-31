@@ -9,5 +9,4 @@ cryptonight_func cryptonight_hash_aesni;
 
 struct cryptonight_ctx *cryptonight_ctx();
 
-
 #endif

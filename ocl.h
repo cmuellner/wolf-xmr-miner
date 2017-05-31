@@ -1,7 +1,7 @@
 #ifndef __OCL_H
 #define __OCL_H
 
-#include <CL/cl.h>
+#include "CL/cl.h"
 #include <stdint.h>
 
 // An OCLDevice structure contains information specific to one device,

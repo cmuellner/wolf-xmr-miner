@@ -10,20 +10,6 @@
 #include <string.h>
 #include <sys/param.h>
 
-#if defined(_MSC_VER)
-#include <stdlib.h>
-
-static inline uint32_t rol32(uint32_t x, int r) {
-  static_assert(sizeof(uint32_t) == sizeof(unsigned int), "this code assumes 32-bit integers");
-  return _rotl(x, r);
-}
-
-static inline uint64_t rol64(uint64_t x, int r) {
-  return _rotl64(x, r);
-}
-
-#else
-
 static inline uint32_t rol32(uint32_t x, int r) {
   return (x << (r & 31)) | (x >> (-r & 31));
 }
@@ -32,8 +18,6 @@ static inline uint64_t rol64(uint64_t x, int r) {
   return (x << (r & 63)) | (x >> (-r & 63));
 }
 
-#endif
-
 static inline uint64_t hi_dword(uint64_t val) {
   return val >> 32;
 }
@@ -41,8 +25,6 @@ static inline uint64_t hi_dword(uint64_t val) {
 static inline uint64_t lo_dword(uint64_t val) {
   return val & 0xFFFFFFFF;
 }
-
-extern uint64_t mul128(uint64_t multiplier, uint64_t multiplicand, uint64_t* product_hi);
 
 static inline uint64_t div_with_reminder(uint64_t dividend, uint32_t divisor, uint32_t* remainder) {
   dividend |= ((uint64_t)*remainder) << 32;
